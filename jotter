@@ -1,0 +1,111 @@
+#!/bin/bash
+
+FZF() {
+  OTHER=${2:-""}
+  SHELL="/bin/bash" fzf --info=inline --print-query \
+      --bind "del:execute(rm ${JOTTER_FOLDER}/{})" \
+      --height 40% --layout reverse --info inline \
+      --preview "${1}" ${OTHER} | tail -1
+}
+
+GENERATE_TEMPLATE(){
+  echo -e "${1:-Untitled}
+=============
+- Category: ${2:-Uncategorized}
+- Tags: ${3:-none}
+- Created: $(date "+%Y-%m-%d %H:%M:%S")
+- Updated: $(date "+%Y-%m-%d %H:%M:%S")
+"
+}
+
+FIND_ALL() {
+  find "${JOTTER_FOLDER}" -not -path '*git*' -type f | sed "s#${JOTTER_FOLDER}/\(.*\)\..*#\1#g"
+}
+
+FIND_BY_CATEGORY() {
+  grep -Rli "Category:.*${1}.*" "${JOTTER_FOLDER}" | sed "s#${JOTTER_FOLDER}/\(.*\)\..*#\1#g"
+}
+
+FIND_BY_TAG(){
+  grep -Rli "Tags:.*${1}.*" "${JOTTER_FOLDER}" | sed "s#${JOTTER_FOLDER}/\(.*\)\..*#\1#g"
+}
+
+GET_CATEGORIES() {
+  grep -RPi -o "Category:\K(.*)" ${JOTTER_FOLDER} | grep -oP '(?<=: ).*' | tr ',| ' '\n' | sort | uniq
+}
+
+GET_TAGS() {
+  grep -RPi -o "Tags:\K(.*)" ${JOTTER_FOLDER} | grep -oP '(?<=: ).*' | tr ',| ' '\n' | sort | uniq
+}
+
+INIT_NOTE_FOLDER(){ 
+  mkdir -p "${JOTTER_FOLDER}"
+  git init "${JOTTER_FOLDER}"
+  if [ -n "${GIT_REPO}" ];then
+    git -C "${JOTTER_FOLDER}" remote add origin "${GIT_REPO}"
+    git -C "${JOTTER_FOLDER}" remote add origin "${GIT_REPO}"
+    git -C "${JOTTER_FOLDER}" pull origin master
+    git -C "${JOTTER_FOLDER}" branch --set-upstream-to=origin/master master
+  fi
+}
+
+PUSH_CHANGES() { 
+  set -ua
+  git -C "${JOTTER_FOLDER}" pull
+  git -C "${JOTTER_FOLDER}" add -A
+  git -C "${JOTTER_FOLDER}" commit -m "${1}"
+  git -C "${JOTTER_FOLDER}" push origin master
+  set +ua
+} 
+
+CHECK_PATH() {
+  NOTE_CATEGORY=$(grep -Pi -o "Category:\K(.*)" "${1}" | tr ',' '/' | xargs)
+  NOTE_TITLE=$(head -n 1 "${1}")
+  if [ "${JOTTER_FOLDER}/${NOTE_CATEGORY}/${NOTE_TITLE}.md" != "${1}" ];then
+    mkdir -p "${JOTTER_FOLDER}/${NOTE_CATEGORY}" 
+    mv "${1}" "${JOTTER_FOLDER}/${NOTE_CATEGORY}/${NOTE_TITLE}.md" 
+    find "${JOTTER_FOLDER}" -empty -type d -delete
+  fi
+}
+
+SELECT_NOTE(){
+  export -f FIND_BY_CATEGORY 
+  export -f FIND_BY_TAG
+  export -f GET_TAGS
+  export JOTTER_FOLDER
+  set -x 
+  CATEGORY=$(GET_CATEGORIES | FZF 'FIND_BY_CATEGORY {}' "--prompt=Category> --bind=ctrl-space:reload(GET_TAGS)")
+  if [ -z "${CATEGORY}" ];then
+    exit 0
+  fi
+  FIND_BY_CATEGORY "${CATEGORY}" | FZF "${BATCAT}"
+
+}
+
+MAIN(){
+  CONFIG_FILE="${XDG_CONFIG_HOME}/.jotter.conf"
+  JOTTER_FOLDER="${XDG_DATA_HOME}/jotter"
+  EDITOR=nvim
+  BATCAT="batcat -l md -p --color always ${JOTTER_FOLDER}/{}.md"
+  source ${CONFIG_FILE}
+  [ ! -d "${JOTTER_FOLDER}" ] && INIT_NOTE_FOLDER
+
+  NOTE=$(FIND_ALL | FZF "${BATCAT}")
+  
+  # NOTE=$(SELECT_NOTE)
+
+  [ -z "${NOTE}" ] && exit 0
+  TITLE=$(echo "${NOTE}" | tr '/' '\n' | tail -1)
+  CATEGORIES=$(echo "${NOTE}" | tr '/' '\n' | head -n -1 | xargs | tr ' ' ',')
+  NOTE="${JOTTER_FOLDER}/${NOTE}.md"
+  if [ ! -f "${NOTE}" ];then
+    mkdir -p "${JOTTER_FOLDER}/$(echo "${CATEGORIES}"| tr ',' '/')"
+    GENERATE_TEMPLATE "${TITLE}" "${CATEGORIES}" > "${NOTE}"
+  fi
+  ${EDITOR} "${NOTE}"
+  sed -i "s/Updated:.*/Updated: $(date "+%Y-%m-%d %H:%M:%S")/" "${NOTE}"
+  CHECK_PATH "${NOTE}"
+  (&> /dev/null PUSH_CHANGES "Pushing $(echo "${CATEGORIES}"| tr ',' '/')/${TITLE}" &)
+} 
+
+MAIN
