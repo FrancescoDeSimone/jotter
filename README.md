@@ -14,7 +14,7 @@ Jotter is a shell script for managing your personal notes with Git version contr
 1. Clone the Jotter repository to your local machine:
 
 ``` 
-https://github.com/FrancescoDeSimone/jotter
+git clone https://github.com/FrancescoDeSimone/jotter
 ```
 
 2. Run make to build the Jotter repository:
