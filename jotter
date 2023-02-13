@@ -1,9 +1,10 @@
 #!/bin/bash
 
 FZF() {
-  OTHER=${2:-""}
-  SHELL="/bin/bash" fzf --info=inline --print-query \
-      --bind "del:execute(rm ${JOTTER_FOLDER}/{})" \
+  OTHER=${3:-""}
+  export -f ${2}
+  ${2} | SHELL="/bin/bash" fzf --info=inline --print-query \
+    --bind "tab:replace-query,del:execute(rm ${JOTTER_FOLDER}/{}.md)" \
       --height 40% --layout reverse --info inline \
       --preview "${1}" ${OTHER} | tail -1
 }
@@ -90,7 +91,8 @@ MAIN(){
   source ${CONFIG_FILE}
   [ ! -d "${JOTTER_FOLDER}" ] && INIT_NOTE_FOLDER
 
-  NOTE=$(FIND_ALL | FZF "${BATCAT}")
+
+  NOTE=$(FZF "${BATCAT}" FIND_ALL)
   
   # NOTE=$(SELECT_NOTE)
 
